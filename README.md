@@ -108,7 +108,7 @@ Other limits, stated plainly:
 - The web demo checks the **three frozen quotes**, or a **live dry quote** for any pair its builder offers. Origin tokens are NEAR-chain tokens; destinations are tokens on NEAR and the EVM chains in `server.ts`. Other chains are not offered yet. The rules engine itself takes any 1Click quote (`npm run checks -- file.json`).
 - Rules are simple: price deviation from the quote's own USD values, with a tiny-trade guard. Thresholds are in `checks.ts` (WARN above 1% loss, BLOCK above 3%) and were tuned by hand on a few quotes. A verdict says what the quote implies, not what you will lose.
 - Inference cost uses per-million-token prices from `config.json`. They came from a third-party price page and should be confirmed at cloud.near.ai.
-- The server listens on `127.0.0.1` only. The kill-switch endpoint has no login, so it must not be exposed publicly as it is.
+- The server listens on `127.0.0.1` only unless you set `HOST`. On a public host, set `OPERATOR_TOKEN`: the kill switch then needs that token, and without it the switch is disabled. The agent's private key (`AGENT_PRIVATE_KEY`) is only used by `payout.ts` on the operator's own machine and is never needed on the server.
 
 ## Safety controls (the human sets the limits)
 

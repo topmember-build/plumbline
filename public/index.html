@@ -604,14 +604,28 @@
     $("#status-text").textContent = on ? "Stopped by operator" : "Selling verdicts";
   };
   kill.addEventListener("change", async () => {
+    const want = kill.checked;
+    const call = (token) => fetch("/api/kill", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-operator-token": token },
+      body: JSON.stringify({ on: want }),
+    });
     try {
-      const res = await fetch("/api/kill", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ on: kill.checked }),
-      });
+      let token = "";
+      try { token = sessionStorage.getItem("plumbline-op") || ""; } catch {}
+      let res = await call(token);
+      if (res.status === 401 && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
+        token = window.prompt("Operator token") || "";
+        res = await call(token);
+        if (res.ok) { try { sessionStorage.setItem("plumbline-op", token); } catch {} }
+      }
+      if (!res.ok) {
+        killState(!want);
+        $("#kill-state").textContent = res.status === 401 ? "Wrong operator token. Nothing changed." : "Only the operator can change this.";
+        return;
+      }
       killState(Boolean((await res.json()).killSwitch));
       loadLedger();
-    } catch { killState(!kill.checked); }
+    } catch { killState(!want); }
   });
 
   (async () => {

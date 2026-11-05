@@ -15,11 +15,13 @@
 
 import "dotenv/config";
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { runAllChecks } from "./checks.ts";
 import { chatAndVerify, verifyModelAttestation } from "./verifier.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
+const HOST = process.env.HOST ?? "127.0.0.1";
 const NEAR_AI = "https://cloud-api.near.ai";
 const ONECLICK = process.env.ONECLICK_URL || "https://1click.chaindefuser.com";
 const ORIGIN = "nep141:wrap.near";
@@ -586,6 +588,17 @@ const server = http.createServer(async (req, res) => {
       return send(res, status, payload);
     }
     if (req.method === "POST" && url === "/api/kill") {
+      // Public hosting: the switch only works with the operator token. Without a token set, it only works locally.
+      const token = process.env.OPERATOR_TOKEN;
+      if (token) {
+        const given = Buffer.from(String(req.headers["x-operator-token"] ?? ""));
+        const want = Buffer.from(token);
+        if (given.length !== want.length || !timingSafeEqual(given, want)) {
+          return send(res, 401, { error: "Operator token required" });
+        }
+      } else if (HOST !== "127.0.0.1") {
+        return send(res, 403, { error: "Set OPERATOR_TOKEN to use the kill switch on a public server" });
+      }
       const body = await readBody(req);
       const cfg = loadConfig();
       cfg.killSwitch = Boolean(body?.on);
@@ -607,9 +620,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Local only. The kill endpoint has no login yet, so do not expose this publicly as-is.
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Plumbline server on http://127.0.0.1:${PORT}`);
+// Local by default. For public hosting set HOST=0.0.0.0 and OPERATOR_TOKEN (the kill switch needs it).
+server.listen(PORT, HOST, () => {
+  console.log(`Plumbline server on http://${HOST}:${PORT}`);
+  if (HOST !== "127.0.0.1" && !process.env.OPERATOR_TOKEN) console.log("Note: OPERATOR_TOKEN is not set, so the kill switch is disabled on this public server.");
   // Warm the attestation cache so the first paid verdict is not slow.
   if (process.env.NEAR_AI_API_KEY) {
     verifyModelAttestation(process.env.NEAR_AI_MODEL ?? "Qwen/Qwen3.6-35B-A3B-FP8")
