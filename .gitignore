@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules/
+/ledger.jsonl
+/config.json
+fixtures/*
+!fixtures/demo-*.json
+*.log

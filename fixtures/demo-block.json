@@ -1,0 +1,42 @@
+{
+  "quote": {
+    "amountIn": "1302083333000000000000000000",
+    "amountInFormatted": "1302.083333",
+    "amountInUsd": "4999.999998720000",
+    "minAmountIn": "1302083333000000000000000000",
+    "amountOut": "18704628077591033587184175",
+    "amountOutFormatted": "18704628.077591033587184175",
+    "amountOutUsd": "4190.470589731938",
+    "minAmountOut": "18517581796815123251312333",
+    "timeEstimate": 22,
+    "refundFee": "0",
+    "withdrawFee": "21425329888350384866"
+  },
+  "quoteRequest": {
+    "dry": true,
+    "depositMode": "SIMPLE",
+    "swapType": "EXACT_INPUT",
+    "slippageTolerance": 100,
+    "originAsset": "nep141:wrap.near",
+    "depositType": "ORIGIN_CHAIN",
+    "destinationAsset": "nep141:jambo-1679.meme-cooking.near",
+    "amount": "1302083333000000000000000000",
+    "refundTo": "topmemberbuild.near",
+    "refundType": "ORIGIN_CHAIN",
+    "recipient": "topmemberbuild.near",
+    "recipientType": "DESTINATION_CHAIN",
+    "deadline": "2026-11-03T11:35:10.249Z",
+    "confidentiality": "public",
+    "quoteWaitingTimeMs": 0,
+    "insured": false,
+    "appFees": [
+      {
+        "recipient": "5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd",
+        "fee": 20
+      }
+    ]
+  },
+  "signature": "ed25519:37BXNpW5kdYmXwVJsTVPxLA5BBy1jAGn5FhQd8i3C7Exs4ka4v9ZPcXLLvaG6sBQMDm5ka2VQf62wGkSRqB6Y5Tn",
+  "timestamp": "2026-11-03T11:25:10.295Z",
+  "correlationId": "f55e2734-524f-4653-b5cf-5f551f334b09"
+}

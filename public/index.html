@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumbline: check the quote before you sign</title>
+<meta name="description" content="Pay a few cents, get an ALLOW, WARN or BLOCK verdict on a NEAR Intents swap quote, explained inside a verified secure enclave.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314202B'/%3E%3Cline x1='32' y1='9' x2='32' y2='26' stroke='%23E6EDF2' stroke-width='2'/%3E%3Ccircle cx='32' cy='9' r='3' fill='%23E6EDF2'/%3E%3Crect x='28' y='26' width='8' height='4' fill='%23E2B861'/%3E%3Cpolygon points='23,30 32,30 32,54 23,41' fill='%23C99A3B'/%3E%3Cpolygon points='32,30 41,30 41,41 32,54' fill='%238F6A1F'/%3E%3Cellipse cx='32' cy='57' rx='16' ry='2.6' fill='none' stroke='%237FA8FF' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Big+Shoulders+Display:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --concrete: #DCDDD8;
+    --paper: #ECEDE8;
+    --slate: #14202B;
+    --slate-2: #1D2C39;
+    --rail: #3A4B59;
+    --chalk: #7FA8FF;
+    --chalk-deep: #2F5FD0;
+    --brass: #C99A3B;
+    --ink: #14202B;
+    --muted: #4F5B66;
+    --line: #B6B9B1;
+    --allow: #0B7A5A;
+    --warn: #B35F00;
+    --block: #C42B45;
+    --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+    --text: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--concrete); }
+  body {
+    margin: 0;
+    color: var(--ink);
+    font: 400 18px/1.55 var(--text);
+    background-color: var(--concrete);
+    /* faint vertical plumb lines, like survey marks on a wall */
+    background-image: repeating-linear-gradient(90deg, transparent 0 119px, rgba(20, 32, 43, 0.055) 119px 120px);
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--chalk-deep); outline-offset: 3px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* Masthead */
+  .mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 26px 0 18px; }
+  .brand { display: block; line-height: 0; }
+  .brand svg { height: 36px; width: auto; }
+  .mast p { margin: 0; color: var(--muted); font-style: italic; }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; color: var(--muted); }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--allow); box-shadow: 0 0 0 3px rgba(11, 122, 90, 0.2); }
+  .status[data-off="true"] i { background: var(--block); box-shadow: 0 0 0 3px rgba(196, 43, 69, 0.2); }
+
+  /* Order slip */
+  .slip { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr) auto; gap: 14px 18px; align-items: end; }
+  .slip label { display: block; font-size: 15px; color: var(--muted); }
+  .slip select, .slip input {
+    display: block; width: 100%; margin-top: 4px; padding: 8px 2px 6px;
+    background: transparent; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0;
+    font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .slip select { cursor: pointer; }
+  .go {
+    padding: 13px 22px; border: 0; background: var(--ink); color: var(--paper);
+    font: 800 24px/1 var(--display); letter-spacing: 0.02em; cursor: pointer; white-space: nowrap;
+    clip-path: polygon(0 0, 100% 0, 100% 72%, 92% 100%, 0 100%);
+  }
+  .go:hover:not(:disabled) { background: var(--chalk-deep); }
+  .go:disabled { opacity: 0.55; cursor: wait; }
+  .slip-note { margin: 10px 0 0; font-size: 15px; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 14px 0 26px; font-size: 15px; color: var(--muted); }
+  .chips button {
+    padding: 6px 12px; background: transparent; border: 1.5px solid var(--line); border-radius: 999px; cursor: pointer; font-size: 15px;
+  }
+  .chips button:hover:not(:disabled) { border-color: var(--ink); background: var(--paper); }
+  .chips button:disabled { opacity: 0.5; cursor: wait; }
+  @media (max-width: 760px) { .slip { grid-template-columns: 1fr 1fr; } .slip .go { grid-column: 1 / -1; } .slip label.amt { grid-column: 1 / -1; } }
+
+  /* Instrument */
+  .instrument { margin: 0; }
+  #inst { display: block; width: 100%; height: auto; border-radius: 8px; box-shadow: 0 18px 40px -22px rgba(20, 32, 43, 0.7); }
+  .panel { fill: var(--slate); }
+  .rail { stroke: var(--rail); stroke-width: 6; stroke-linecap: round; }
+  .railtick { stroke: #5B6E7E; stroke-width: 2; }
+  #trolley rect { fill: #B8C4CE; }
+  #trolley circle { fill: var(--slate); }
+  .cord { stroke: #E6EDF2; stroke-width: 2.2; }
+  .bob-l { fill: var(--brass); }
+  .bob-r { fill: #8F6A1F; }
+  .bob-c { fill: #E2B861; }
+  .guide { stroke: var(--chalk); stroke-width: 1.5; stroke-dasharray: 5 6; opacity: 0.85; }
+  .band { fill-opacity: 0.3; transition: fill-opacity 0.4s; }
+  .shaft-bg { pointer-events: none; }
+  .band.allow { fill: #1FA37C; }
+  .band.warn { fill: #E58A1F; }
+  .band.block { fill: #E24A63; }
+  #inst[data-zone="allow"] .band.allow, #inst[data-zone="warn"] .band.warn, #inst[data-zone="block"] .band.block { fill-opacity: 1; }
+  .zlabel { font: 700 17px var(--text); fill: #fff; text-anchor: middle; }
+  .tick { font: 400 15px var(--text); fill: #A9B8C4; }
+  .reading { opacity: 0; transition: opacity 0.5s; }
+  #inst.settled .reading { opacity: 1; }
+  .reading text { font: 800 32px var(--display); fill: #fff; letter-spacing: 0.02em; }
+  .shaft { opacity: 0.1; transition: opacity 0.6s; }
+  #inst[data-zone="allow"] .shaft.allow, #inst[data-zone="warn"] .shaft.warn, #inst[data-zone="block"] .shaft.block { opacity: 1; }
+  .zline { stroke: #2C3E4D; stroke-width: 1.5; stroke-dasharray: 3 7; }
+  .legend { margin: 10px 0 0; font-size: 15px; color: var(--muted); }
+  @media (max-width: 640px) { .zlabel, .tick { display: none; } }
+
+  /* Readout */
+  .readout { margin: 30px 0 0; min-height: 120px; }
+  .idle { margin: 0; color: var(--muted); max-width: 52ch; }
+  .read { --accent: var(--muted); display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 8px 44px; align-items: start; }
+  .read[data-v="ALLOW"] { --accent: var(--allow); }
+  .read[data-v="WARN"] { --accent: var(--warn); }
+  .read[data-v="BLOCK"] { --accent: var(--block); }
+  @media (max-width: 800px) { .read { grid-template-columns: 1fr; } }
+  .vword { margin: 0; font: 900 clamp(64px, 12vw, 120px)/0.86 var(--display); letter-spacing: -0.01em; color: var(--accent); }
+  .for { margin: 0 0 6px; color: var(--muted); font-size: 16px; }
+  .figs { margin: 14px 0 0; font-variant-numeric: tabular-nums; }
+  .figs b { font: 800 40px/1 var(--display); color: var(--accent); }
+  .figs span { color: var(--muted); }
+  .src { margin: 6px 0 0; font-size: 15px; color: var(--muted); }
+  .explain { margin: 0 0 14px; font-size: 22px; line-height: 1.45; max-width: 44ch; }
+  .checks { list-style: none; padding: 0; margin: 0 0 14px; border-top: 1px solid var(--line); }
+  .checks li { padding: 8px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .checks b { margin-right: 6px; }
+  details.proof { margin: 0; font-size: 16px; color: var(--muted); }
+  details.proof summary { cursor: pointer; color: var(--ink); }
+  details.proof ul { margin: 8px 0 0; padding-left: 20px; }
+  details.proof li { margin: 2px 0; }
+  .ok { color: var(--allow); font-weight: 700; }
+  .no { color: var(--block); font-weight: 700; }
+  .na { color: var(--warn); font-weight: 700; }
+  .pay code { word-break: break-all; font: 700 16px var(--text); background: var(--paper); padding: 3px 8px; border: 1px solid var(--line); }
+  .pay p { margin: 0 0 10px; max-width: 56ch; }
+  .notice { margin: 0; font-size: 20px; max-width: 46ch; }
+
+  /* Field book */
+  .book { margin: 56px 0 0; }
+  h2 { margin: 0 0 14px; font: 800 34px/1 var(--display); letter-spacing: 0.01em; }
+  .totals { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 0 0 8px; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+  .totals div { padding: 10px 12px 10px 0; }
+  .totals dt { font-size: 15px; color: var(--muted); }
+  .totals dd { margin: 0; font: 800 30px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+  @media (max-width: 700px) { .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .fine { margin: 0 0 14px; color: var(--muted); font-size: 15px; }
+  .tablewrap { overflow-x: auto; }
+  table.ledger { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 16px; font-variant-numeric: tabular-nums; }
+  table.ledger th { text-align: left; font-weight: 400; color: var(--muted); font-size: 15px; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--ink); }
+  table.ledger td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.ledger a { color: var(--chalk-deep); }
+  .v-ALLOW { color: var(--allow); font-weight: 700; }
+  .v-WARN { color: var(--warn); font-weight: 700; }
+  .v-BLOCK { color: var(--block); font-weight: 700; }
+  .empty { color: var(--muted); }
+
+  /* Operator */
+  .operator { margin: 48px 0 0; padding: 18px 0 56px; border-top: 2px solid var(--ink); display: flex; flex-wrap: wrap; gap: 14px 40px; align-items: center; justify-content: space-between; }
+  .operator h2 { font-size: 24px; margin: 0; }
+  .switch { display: inline-flex; gap: 12px; align-items: center; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; }
+  .switch .track { width: 54px; height: 28px; background: #8C9298; border-radius: 4px; position: relative; transition: background 0.2s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; background: var(--paper); border-radius: 2px; transition: transform 0.2s; }
+  .switch input:checked + .track { background: var(--block); }
+  .switch input:checked + .track::after { transform: translateX(26px); }
+  .switch input:focus-visible + .track { outline: 3px solid var(--chalk-deep); outline-offset: 3px; }
+  .state-line { margin: 0; color: var(--muted); font-size: 16px; }
+  .foot { margin: 0; padding-bottom: 36px; color: var(--muted); font-size: 15px; }
+
+  @media (prefers-reduced-motion: reduce) { .band, .reading { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <a class="brand" href="/" aria-label="Plumbline home">
+      <svg viewBox="0 0 444 64" role="img" aria-label="Plumbline">
+        <g transform="translate(0 4)">
+          <g fill="none" stroke="#14202B" stroke-width="8" stroke-linejoin="miter" stroke-miterlimit="1.5" stroke-linecap="butt">
+            <path transform="translate(0 0)" d="M4 56V0M4 4H22a12 12 0 0 1 0 24H4"/>
+            <path transform="translate(50 0)" d="M4 0V56M4 52H34"/>
+            <path transform="translate(100 0)" d="M4 0V36a16 16 0 0 0 32 0V0"/>
+            <path transform="translate(156 0)" d="M4 56V0L22 30L40 0V56"/>
+            <path transform="translate(212 0)" d="M4 0V56M4 4H20a11 11 0 0 1 0 22H4M4 26H22a13 13 0 0 1 0 26H4"/>
+            <path transform="translate(263 0)" d="M4 0V56M4 52H34"/>
+            <path transform="translate(348 0)" d="M4 56V0L36 56V0"/>
+            <path transform="translate(400 0)" d="M4 0V56M4 4H34M4 28H28M4 52H34"/>
+          </g>
+          <g transform="translate(313 0)">
+            <line x1="11" y1="3" x2="11" y2="18" stroke="#14202B" stroke-width="3.5"/>
+            <circle cx="11" cy="4" r="4.5" fill="#14202B"/>
+            <rect x="5" y="18" width="12" height="6" fill="#E2B861"/>
+            <polygon points="0,24 11,24 11,56 0,40" fill="#C99A3B"/>
+            <polygon points="11,24 22,24 22,40 11,56" fill="#8F6A1F"/>
+          </g>
+        </g>
+      </svg>
+    </a>
+    <p>Check the quote before you sign.</p>
+    <span class="status" id="status" data-off="false"><i></i><span id="status-text">Selling verdicts</span></span>
+  </header>
+
+  <main>
+    <h1 class="sr">Plumbline: check a NEAR Intents swap quote before you sign</h1>
+
+    <form class="slip" id="slip" hidden>
+      <label>You swap<select id="from" aria-label="Token you swap from"></select></label>
+      <label class="amt">Amount in USD<input id="usd" type="number" min="1" max="250000" step="any" value="2500" inputmode="decimal"></label>
+      <label>Into<select id="to" aria-label="Token you swap into"></select></label>
+      <button class="go" id="go" type="submit">Get verdict</button>
+    </form>
+    <p class="slip-note" id="slip-note" hidden>Plumbline asks NEAR Intents for a live quote on this swap. Nothing is swapped.</p>
+    <div class="chips" id="chips"><span>Or replay a frozen quote, the same result every time:</span></div>
+
+    <figure class="instrument">
+      <svg id="inst" viewBox="0 0 960 470" role="img" aria-labelledby="inst-t inst-d" data-zone="">
+        <title id="inst-t">Plumb line instrument</title>
+        <desc id="inst-d">A plumb bob hangs from a rail over a floor scale. Waiting for a swap to check.</desc>
+        <defs>
+          <linearGradient id="gAllow" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#1FA37C" stop-opacity="0.45"/><stop offset="1" stop-color="#1FA37C" stop-opacity="0"/></linearGradient>
+          <linearGradient id="gWarn" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#E58A1F" stop-opacity="0.45"/><stop offset="1" stop-color="#E58A1F" stop-opacity="0"/></linearGradient>
+          <linearGradient id="gBlock" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#E24A63" stop-opacity="0.5"/><stop offset="1" stop-color="#E24A63" stop-opacity="0"/></linearGradient>
+        </defs>
+        <rect class="panel" width="960" height="470"/>
+        <g class="shaft-bg">
+          <rect class="shaft allow" x="60" y="34" width="210" height="358" fill="url(#gAllow)"/>
+          <rect class="shaft warn" x="270" y="34" width="210" height="358" fill="url(#gWarn)"/>
+          <rect class="shaft block" x="480" y="34" width="420" height="358" fill="url(#gBlock)"/>
+        </g>
+        <line class="zline" x1="270" y1="48" x2="270" y2="392"/>
+        <line class="zline" x1="480" y1="48" x2="480" y2="392"/>
+        <line class="rail" x1="60" y1="34" x2="900" y2="34"/>
+        <line class="railtick" x1="60" y1="20" x2="60" y2="48"/>
+        <line class="railtick" x1="270" y1="26" x2="270" y2="42"/>
+        <line class="railtick" x1="480" y1="26" x2="480" y2="42"/>
+        <line class="railtick" x1="900" y1="20" x2="900" y2="48"/>
+        <g id="trolley"><rect x="-15" y="25" width="30" height="18" rx="2"/><circle cx="0" cy="34" r="4"/></g>
+        <g id="pend">
+          <line class="cord" x1="0" y1="0" x2="0" y2="266"/>
+          <g transform="translate(0 266)">
+            <rect class="bob-c" x="-9" y="0" width="18" height="9"/>
+            <polygon class="bob-l" points="-16,9 0,9 0,84 -16,40"/>
+            <polygon class="bob-r" points="0,9 16,9 16,40 0,84"/>
+          </g>
+        </g>
+        <line class="guide" id="guide" x1="60" y1="384" x2="60" y2="392"/>
+        <rect class="band allow" x="60" y="392" width="210" height="30"/>
+        <rect class="band warn" x="270" y="392" width="210" height="30"/>
+        <rect class="band block" x="480" y="392" width="420" height="30"/>
+        <text class="zlabel" x="165" y="413">Allow</text>
+        <text class="zlabel" x="375" y="413">Warn</text>
+        <text class="zlabel" x="690" y="413">Block</text>
+        <text class="tick" x="60" y="444">0%</text>
+        <text class="tick" x="270" y="444" text-anchor="middle">1%</text>
+        <text class="tick" x="480" y="444" text-anchor="middle">3%</text>
+        <text class="tick" x="900" y="444" text-anchor="end">20% or more</text>
+        <g class="reading" id="reading" transform="translate(60 0)">
+          <text id="reading-text" y="338" x="34">0.0% lost</text>
+        </g>
+      </svg>
+      <figcaption class="legend">The bob hangs over the zone your quote lands in. Value lost under 1% is Allow, 1 to 3% is Warn, over 3% is Block. Very small trades are capped at Warn because fixed fees dominate them.</figcaption>
+    </figure>
+
+    <section class="readout" id="result" aria-live="polite">
+      <p class="idle">Pick a swap above and the bob swings to its reading. Rules decide the verdict. The AI only explains it.</p>
+    </section>
+
+    <section class="book" aria-labelledby="book-h">
+      <h2 id="book-h">Field book</h2>
+      <dl class="totals">
+        <div><dt>Verdicts sold</dt><dd id="t-sales">0</dd></div>
+        <div><dt>Fees recorded</dt><dd id="t-fees">$0.00</dd></div>
+        <div><dt>Inference cost</dt><dd id="t-cost">$0.0000</dd></div>
+        <div><dt>Kept as float</dt><dd id="t-float">$0.00</dd></div>
+        <div><dt>Paid out</dt><dd id="t-paid">$0.00</dd></div>
+      </dl>
+      <p class="fine" id="fee-note">Demo mode: fees are recorded but not verified on-chain.</p>
+      <div class="tablewrap">
+        <table class="ledger" id="ledger">
+          <thead><tr><th>Time</th><th>Swap</th><th>Verdict</th><th>Fee</th><th>Cost</th><th>Explanation</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="operator" aria-labelledby="op-h">
+      <h2 id="op-h">Operator</h2>
+      <label class="switch">
+        <input type="checkbox" id="kill">
+        <span class="track" aria-hidden="true"></span>
+        <span>Stop selling verdicts</span>
+      </label>
+      <p class="state-line" id="kill-state">Plumbline is selling verdicts.</p>
+    </section>
+    <p class="foot">Each explanation is signed inside a NEAR AI Cloud enclave. Plumbline checks the signature and the GPU attestation. The Intel CPU quote is not checked yet.</p>
+  </main>
+</div>
+
+<script>
+  const FROZEN = {
+    allow: "1,000 NEAR into ETH",
+    warn: "0.1 NEAR into ETH",
+    block: "$5,000 of NEAR into JAMBO",
+  };
+  const CHECK_LABELS = { price_deviation: "Price impact" };
+  const VERDICT_WORD = { ALLOW: "Allow", WARN: "Warn", BLOCK: "Block" };
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const money = (n, d = 2) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const txLink = (h, label) => h ? `<a href="https://nearblocks.io/txns/${encodeURIComponent(h)}" target="_blank" rel="noopener">${esc(label)} ${esc(String(h).slice(0, 8))}...</a>` : "";
+
+  let busy = false;
+  let feeNear = null;
+  let requireFee = false;
+
+  /* ---------- The instrument: a damped plumb bob on a moving trolley ---------- */
+  const X0 = 60, ROD_Y = 34, CORD = 266, TIP = 350, FLOOR = 392;
+  const inst = $("#inst"), trolley = $("#trolley"), pend = $("#pend"), guide = $("#guide"), reading = $("#reading");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let x = X0, vx = 0, th = 0.55, om = 0, target = X0, mode = "idle", raf = 0, last = 0, onRest = null;
+
+  function draw() {
+    trolley.setAttribute("transform", `translate(${x.toFixed(1)} 0)`);
+    pend.setAttribute("transform", `translate(${x.toFixed(1)} ${ROD_Y}) rotate(${(-th * 180 / Math.PI).toFixed(2)})`);
+    const tx = x - TIP * Math.sin(th), ty = ROD_Y + TIP * Math.cos(th);
+    guide.setAttribute("x1", tx.toFixed(1)); guide.setAttribute("x2", tx.toFixed(1));
+    guide.setAttribute("y1", ty.toFixed(1)); guide.setAttribute("y2", FLOOR);
+  }
+  function step(now) {
+    if (!last) last = now;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (mode === "checking") target = 480 + 330 * Math.sin(now / 650);
+    const n = 3, h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const k = 16, c = 2 * Math.sqrt(k) * 0.95;
+      const ax = Math.max(-4000, Math.min(4000, k * (target - x) - c * vx));
+      vx += ax * h; x += vx * h;
+      const alpha = -(2600 / CORD) * Math.sin(th) - 2.0 * om - (ax / CORD) * Math.cos(th);
+      om += alpha * h; th += om * h;
+      th = Math.max(-1.1, Math.min(1.1, th));
+    }
+    draw();
+    const rest = mode !== "checking" && Math.abs(target - x) < 0.4 && Math.abs(vx) < 1 && Math.abs(th) < 0.004 && Math.abs(om) < 0.02;
+    if (rest) {
+      x = target; th = 0; om = 0; vx = 0; draw(); raf = 0; last = 0;
+      const f = onRest; onRest = null; if (f) f();
+      return;
+    }
+    raf = requestAnimationFrame(step);
+  }
+  function kick() {
+    if (reduce) {
+      x = target; th = 0; om = 0; vx = 0; draw();
+      const f = onRest; onRest = null; if (f) f();
+      return;
+    }
+    if (!raf) { last = 0; raf = requestAnimationFrame(step); }
+  }
+  function park() {
+    mode = "idle"; target = X0; onRest = null;
+    inst.classList.remove("settled"); inst.dataset.zone = "";
+    $("#inst-d").textContent = "A plumb bob hangs from a rail over a floor scale. Waiting for a swap to check.";
+    kick();
+  }
+  function search() {
+    mode = "checking"; onRest = null;
+    inst.classList.remove("settled"); inst.dataset.zone = "";
+    $("#inst-d").textContent = "The plumb bob is swinging while Plumbline checks the quote.";
+    kick();
+  }
+  // The bob always lands inside the zone the rules chose, so the picture never disagrees with the verdict.
+  function posFor(verdict, loss) {
+    const c = (v, a, b) => Math.max(a, Math.min(b, v));
+    if (verdict === "ALLOW") return 60 + c(loss ?? 0, 0, 1) * 210;
+    if (verdict === "WARN") {
+      if (loss === null) return 375;
+      if (loss >= 1 && loss < 3) return 270 + (loss - 1) / 2 * 210;
+      return loss >= 3 ? 462 : 285;
+    }
+    return 480 + (c(loss ?? 3, 3, 20) - 3) / 17 * 420;
+  }
+  function settleOn(verdict, loss) {
+    mode = "result";
+    target = posFor(verdict, loss);
+    inst.dataset.zone = verdict.toLowerCase();
+    reading.setAttribute("transform", `translate(${target.toFixed(1)} 0)`);
+    const rt = $("#reading-text"), right = target < 640;
+    rt.setAttribute("x", right ? 34 : -34);
+    rt.setAttribute("text-anchor", right ? "start" : "end");
+    rt.textContent = loss === null ? "No usable price" : `${Math.max(0, loss).toFixed(1)}% lost`;
+    $("#inst-d").textContent = `The plumb bob has come to rest over the ${verdict.toLowerCase()} zone.` + (loss === null ? "" : ` Value lost: ${loss.toFixed(1)} percent.`);
+    onRest = () => inst.classList.add("settled");
+    kick();
+  }
+  draw(); kick(); // on load the bob swings in and comes to rest at zero
+
+  /* ---------- Order slip ---------- */
+  const slip = $("#slip"), goBtn = $("#go");
+  const chips = $("#chips");
+  for (const [key, label] of Object.entries(FROZEN)) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = label;
+    b.addEventListener("click", () => run({ scenario: key, label }));
+    chips.appendChild(b);
+  }
+  const setBusy = (v) => {
+    busy = v; goBtn.disabled = v;
+    chips.querySelectorAll("button").forEach((b) => (b.disabled = v));
+  };
+
+  async function loadTokens() {
+    try {
+      const res = await fetch("/api/tokens");
+      const t = await res.json();
+      if (!res.ok || !t.from?.length || !t.to?.length) throw new Error();
+      const from = $("#from"), to = $("#to");
+      from.innerHTML = t.from.map((k) => `<option value="${esc(k.assetId)}">${esc(k.symbol)}</option>`).join("");
+      const groups = {};
+      for (const k of t.to) (groups[k.blockchain] ||= []).push(k);
+      to.innerHTML = Object.entries(groups).map(([chain, list]) =>
+        `<optgroup label="${esc(chain)}">${list.map((k) => `<option value="${esc(k.assetId)}">${esc(k.symbol)}</option>`).join("")}</optgroup>`).join("");
+      const near = t.from.find((k) => /^w?near$/i.test(k.symbol)); if (near) from.value = near.assetId;
+      const eth = t.to.find((k) => k.symbol === "ETH" && k.blockchain === "eth"); if (eth) to.value = eth.assetId;
+      slip.hidden = false; $("#slip-note").hidden = false;
+    } catch {
+      $("#chips span").textContent = "Live swaps are unavailable right now. Replay a frozen quote, the same result every time:";
+    }
+  }
+  slip.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const usd = Number($("#usd").value);
+    const f = $("#from").selectedOptions[0]?.textContent, t = $("#to").selectedOptions[0]?.textContent;
+    run({
+      scenario: "custom", from: $("#from").value, to: $("#to").value, usd,
+      label: `${money(usd, usd % 1 ? 2 : 0)} of ${f} into ${t}`,
+    });
+  });
+
+  function showNotice(off, text) {
+    park();
+    $("#result").innerHTML = `<p class="notice">${esc(text)}</p>`;
+    if (off) $("#inst-d").textContent = "Plumbline is switched off by its operator.";
+  }
+
+  async function run(spec) {
+    if (busy) return;
+    setBusy(true);
+    search();
+    $("#result").innerHTML = `<p class="idle">Checking the quote for ${esc(spec.label)}</p>`;
+    try {
+      let orderId = null;
+      try { requireFee = Boolean((await (await fetch("/api/config")).json()).requireFee); } catch {}
+      if (requireFee) {
+        orderId = await pay(spec);
+        if (!orderId) { setBusy(false); loadLedger(); return; }
+        search();
+        $("#result").innerHTML = `<p class="idle">Payment confirmed. Checking the quote for ${esc(spec.label)}</p>`;
+      }
+      const res = await fetch("/api/verdict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario: spec.scenario, from: spec.from, to: spec.to, usd: spec.usd, orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) showNotice(res.status === 503, data.error || "Something went wrong.");
+      else render(data);
+    } catch {
+      showNotice(false, "Can't reach the Plumbline server. Check that it is running, then try again.");
+    }
+    setBusy(false);
+    loadLedger();
+  }
+
+  // Creates an Intents payment order, shows the deposit details, and waits for SUCCESS.
+  // Returns the orderId when paid, or null if refunded, failed, refused or expired.
+  async function pay(spec) {
+    const r = await fetch("/api/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenario: spec.scenario, from: spec.from, to: spec.to, usd: spec.usd }),
+    });
+    const o = await r.json().catch(() => ({}));
+    if (!r.ok) { showNotice(r.status === 503, o.error || "Could not start a payment."); return null; }
+    park();
+    $("#result").innerHTML = `<div class="pay">
+      <p class="notice">Pay <b>${esc(o.sendNear)} NEAR</b> through NEAR Intents to unlock this check.</p>
+      <p>Deposit address<br><code>${esc(o.depositAddress)}</code></p>
+      ${o.depositMemo ? `<p>Memo<br><code>${esc(o.depositMemo)}</code></p>` : ""}
+      <p class="src">The agent receives about ${esc(o.receiveUsdc)} USDC. Send from the account that should receive any refund.</p>
+      <p class="src" id="pay-status">Waiting for payment</p></div>`;
+    const end = Date.now() + 30 * 60 * 1000;
+    while (Date.now() < end) {
+      await sleep(5000);
+      let s = {};
+      try { s = await (await fetch("/api/order-status?id=" + encodeURIComponent(o.orderId))).json(); } catch {}
+      const el = $("#pay-status");
+      if (el) el.textContent = "Payment status: " + (s.status || "waiting for deposit");
+      if (s.status === "SUCCESS") return o.orderId;
+      if (s.status === "REFUNDED" || s.status === "FAILED") {
+        showNotice(false, "Payment " + s.status.toLowerCase() + (s.refundReason ? " (" + s.refundReason + ")" : "") + ". No verdict was sold.");
+        return null;
+      }
+    }
+    showNotice(false, "The payment window expired. No verdict was sold.");
+    return null;
+  }
+
+  function proofRows(at) {
+    const yes = (b) => b ? '<span class="ok">passed</span>' : '<span class="no">failed</span>';
+    return `<ul>
+      <li>Response signature matches the attested enclave address: ${yes(at.signatureVerified)}</li>
+      <li>NVIDIA GPU attestation: ${yes(at.gpuPassed)}</li>
+      <li>Intel CPU quote: <span class="na">not checked yet</span></li>
+    </ul>${at.signer ? `<p class="src">Signer ${esc(at.signer)}</p>` : ""}${at.error ? `<p class="src">${esc(at.error)}</p>` : ""}`;
+  }
+
+  function render(d) {
+    const s = d.swap || {};
+    const loss = typeof s.lossPct === "number" ? s.lossPct : null;
+    settleOn(d.verdict, loss);
+    const checks = d.checks.map((c) => `<li><b>${esc(CHECK_LABELS[c.name] || c.name)}</b>${esc(c.detail)}</li>`).join("");
+    const at = d.attestation || {};
+    let proof;
+    if (at.verified) {
+      proof = `<details class="proof"><summary>Explanation signature and GPU attestation checked. The Intel CPU quote is not checked yet.</summary>${proofRows(at)}</details>`;
+    } else if (at.fetched) {
+      proof = `<details class="proof" open><summary>The enclave check did not pass.</summary>${proofRows(at)}</details>`;
+    } else {
+      proof = `<p class="src">No enclave attestation for this verdict.${d.explanationSource === "rules" ? " The explanation was written from the checks, not by the AI." : ""}</p>`;
+    }
+    let source = "Frozen quote, the same every time.";
+    if (s.live) source = "Live quote from NEAR Intents" + (s.quoteAt ? ", taken " + new Date(s.quoteAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "") + ".";
+    const figs = loss === null
+      ? `<p class="figs"><b>No price</b> <span>for one side of this swap</span></p>`
+      : `<p class="figs"><b>${esc(Math.max(0, loss).toFixed(1))}%</b> <span>of value lost. ${esc(money(s.amountInUsd))} in, ${esc(money(s.amountOutUsd))} out.</span></p>`;
+    $("#result").innerHTML = `<div class="read" data-v="${esc(d.verdict)}">
+      <div>
+        <p class="for">${esc(s.label || "")}</p>
+        <p class="vword">${esc(VERDICT_WORD[d.verdict] || d.verdict)}</p>
+        ${figs}
+        <p class="src">${esc(source)}</p>
+      </div>
+      <div>
+        <p class="explain">${esc(d.explanation)}</p>
+        <ul class="checks">${checks}</ul>
+        ${proof}
+      </div>
+    </div>`;
+  }
+
+  /* ---------- Field book ---------- */
+  async function loadLedger() {
+    try {
+      const data = await (await fetch("/api/ledger")).json();
+      let cfg = {};
+      try { cfg = await (await fetch("/api/config")).json(); } catch {}
+      const paidMode = Boolean(cfg.requireFee);
+      feeNear = cfg.feeNear ?? null;
+      goBtn.textContent = paidMode && feeNear ? `Get verdict for ${feeNear} NEAR` : "Get verdict";
+      const T = data.totals;
+      $("#t-sales").textContent = T.sales;
+      $("#t-fees").textContent = money(paidMode ? T.revenueVerifiedUsd : T.revenueVerifiedUsd + T.revenueUnverifiedUsd);
+      $("#fee-note").textContent = paidMode ? "Fees count only after Intents reports SUCCESS." : "Demo mode: fees are recorded but not verified on-chain.";
+      $("#t-cost").textContent = money(T.inferenceCostUsd, 4);
+      $("#t-float").textContent = money(T.floatUsd);
+      $("#t-paid").textContent = money(T.paidOutUsd);
+      const rows = data.recent.filter((e) => ["verdict", "refused", "kill-switch", "fee-refunded", "payout"].includes(e.event)).slice(-10).reverse();
+      const body = $("#ledger tbody");
+      if (!rows.length) {
+        body.innerHTML = `<tr><td class="empty" colspan="6">No sales yet. Check a swap to make the first one.</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map((e) => {
+        const t = esc(new Date(e.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+        if (e.event === "verdict") {
+          const swap = esc(e.swapLabel || FROZEN[e.scenario] || e.scenario);
+          const fee = e.feeVerified ? `+${money(e.feeUsd)} paid ${txLink(e.feeTx, "tx")}` : "Unpaid (demo)";
+          const expl = e.attestationVerified ? "Signature and GPU checked" : (e.explanationSource === "rules" ? "Rules text only" : "Not verified");
+          return `<tr><td>${t}</td><td>${swap}</td><td><span class="v-${esc(e.verdict)}">${esc(VERDICT_WORD[e.verdict] || e.verdict)}</span></td><td>${fee}</td><td>${money(e.costUsd, 4)}</td><td>${esc(expl)}</td></tr>`;
+        }
+        if (e.event === "payout") {
+          return `<tr><td>${t}</td><td colspan="5">Payout ${money(e.amountUsdc)} to ${esc(e.to)} ${txLink(e.txHash, "tx")}</td></tr>`;
+        }
+        if (e.event === "refused") {
+          return `<tr><td>${t}</td><td colspan="5">Refused: ${e.reason === "kill-switch" ? "operator stopped Plumbline" : "daily budget reached"}</td></tr>`;
+        }
+        if (e.event === "fee-refunded") {
+          return `<tr><td>${t}</td><td colspan="5">Payment ${esc(String(e.status).toLowerCase())}${e.reason ? " (" + esc(e.reason) + ")" : ""}. No verdict sold.</td></tr>`;
+        }
+        return `<tr><td>${t}</td><td colspan="5">Operator ${e.on ? "stopped" : "restarted"} Plumbline</td></tr>`;
+      }).join("");
+    } catch { /* the ledger is optional on the page */ }
+  }
+
+  /* ---------- Operator switch ---------- */
+  const kill = $("#kill");
+  const killState = (on) => {
+    kill.checked = on;
+    $("#kill-state").textContent = on ? "Plumbline is stopped. New requests are refused." : "Plumbline is selling verdicts.";
+    $("#status").dataset.off = String(on);
+    $("#status-text").textContent = on ? "Stopped by operator" : "Selling verdicts";
+  };
+  kill.addEventListener("change", async () => {
+    try {
+      const res = await fetch("/api/kill", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on: kill.checked }),
+      });
+      killState(Boolean((await res.json()).killSwitch));
+      loadLedger();
+    } catch { killState(!kill.checked); }
+  });
+
+  (async () => {
+    try { killState(Boolean((await (await fetch("/api/config")).json()).killSwitch)); } catch {}
+    loadTokens();
+    loadLedger();
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+sequenceDiagram
+  autonumber
+  actor T as Trader
+  participant P as Plumbline server
+  participant I as NEAR Intents
+  participant AG as Agent account (topmember.near)
+  participant AI as NEAR AI Cloud (TEE model)
+  participant OP as Operator (topmemberbuild.near)
+
+  T->>P: Order a verdict
+  Note over P: Gate: kill switch off? daily budget left?
+  P->>I: Quote (not dry)
+  I-->>T: Deposit address
+  T->>I: Pays 0.1 NEAR
+  I->>AG: Swaps and delivers USDC
+  T->>P: Verdict request + order id
+  P->>I: Status of this order?
+  I-->>P: SUCCESS (single use, paid to the agent)
+  Note over P: Rules decide ALLOW / WARN / BLOCK (checks.ts)
+  P->>AI: Explain this verdict (2 sentences)
+  AI-->>P: Explanation + signature
+  Note over P: verifier.ts: fresh nonce, NVIDIA GPU check,<br/>signature matches the attested address
+  P-->>T: Verdict + explanation + proof status
+  Note over P: Everything is logged to ledger.jsonl
+  Note over AG,OP: Operator runs payout.ts: owed = fees - inference cost - float - already paid
+  AG->>OP: USDC share (ft_transfer, dry run by default)

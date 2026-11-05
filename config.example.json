@@ -1,0 +1,11 @@
+{
+  "killSwitch": false,
+  "requireFee": false,
+  "feeUsd": 0.25,
+  "feeNear": 0.1,
+  "inputUsdPerM": 0.17,
+  "outputUsdPerM": 1.1,
+  "dailyInferenceBudgetUsd": 1.0,
+  "floatPct": 20,
+  "payoutAccount": "topmemberbuild.near"
+}
